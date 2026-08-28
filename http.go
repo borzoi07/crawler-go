@@ -57,6 +57,7 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 
 	// make sure it's crawling the same domain
 	if cfg.baseURL.Hostname() != parsedCurrentURL.Hostname() {
+		// TODO: count external links and add it to the PageData struct
 		fmt.Printf("--DEBUG: detected different domain: %s\n", rawCurrentURL)
 		return
 	}

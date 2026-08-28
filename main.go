@@ -83,4 +83,10 @@ func main() {
 	for k, v := range cfg.pages {
 		fmt.Printf(" • %d: %s\n", v.TimesVisited, k)
 	}
+
+	err = writeJSONReport(cfg.pages, "report.json")
+	if err != nil {
+		fmt.Println("> writeJSONReport returned err:", err)
+		os.Exit(1)
+	}
 }
