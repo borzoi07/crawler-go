@@ -14,6 +14,7 @@ type PageData struct {
 	FirstParagraph string
 	OutgoingLinks  []string
 	ImageURLs      []string
+	TimesVisited   int
 }
 
 func extractPageData(html, pageURL string) PageData {

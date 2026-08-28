@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -36,10 +37,26 @@ func getHTML(rawURL string) (string, error) {
 	return string(data), nil
 }
 
-func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
+func (cfg *config) crawlPage(rawCurrentURL string) {
+	cfg.concurrencyControl <- struct{}{} // will block if buffer limit is reached
+	defer func() {
+		<-cfg.concurrencyControl
+		cfg.wg.Done()
+	}()
+
+	// immediately return when maxPage limit is reached
+	if cfg.getPageCount() >= cfg.maxPages {
+		return
+	}
+
+	parsedCurrentURL, err := url.Parse(rawCurrentURL)
+	if err != nil {
+		fmt.Printf("> returned err: %v\n", err)
+		return
+	}
+
 	// make sure it's crawling the same domain
-	// TODO: detecting a substring may be unpredictable, consider using 'net/url' or 'path'
-	if !strings.Contains(rawCurrentURL, rawBaseURL) {
+	if cfg.baseURL.Hostname() != parsedCurrentURL.Hostname() {
 		fmt.Printf("--DEBUG: detected different domain: %s\n", rawCurrentURL)
 		return
 	}
@@ -50,12 +67,9 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
 		return
 	}
 
-	// if it already crawled this return
-	if _, ok := pages[normalCurrentURL]; ok {
-		pages[normalCurrentURL]++
+	// if it already crawled this increment and return
+	if !cfg.addPageVisit(normalCurrentURL) {
 		return
-	} else {
-		pages[normalCurrentURL] = 1
 	}
 
 	html, err := getHTML(rawCurrentURL)
@@ -67,7 +81,34 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
 
 	pageData := extractPageData(html, rawCurrentURL)
 
+	// add page data
+	cfg.mu.Lock()
+	pageData.TimesVisited = 1
+	cfg.pages[normalCurrentURL] = pageData
+	cfg.mu.Unlock()
+
 	for _, url := range pageData.OutgoingLinks {
-		crawlPage(rawBaseURL, url, pages)
+		cfg.wg.Add(1)
+		go cfg.crawlPage(url)
 	}
+}
+
+func (cfg *config) addPageVisit(normaliedURL string) (isFirst bool) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+
+	if pageData, ok := cfg.pages[normaliedURL]; ok {
+		pageData.TimesVisited++
+		cfg.pages[normaliedURL] = pageData
+		return false
+	}
+
+	return true
+}
+
+func (cfg *config) getPageCount() int {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+
+	return len(cfg.pages)
 }
